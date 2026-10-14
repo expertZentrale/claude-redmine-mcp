@@ -5,6 +5,8 @@ Turns redminelib resources and resource sets into plain JSON data for tool resul
 DEFAULT_LIMIT = 25
 MAX_LIMIT = 100
 LIST_TEXT_LIMIT = 300
+# Redmine returns the API key of the requesting user (users/current), it must never reach the model
+SECRET_FIELDS = frozenset({'api_key', 'password'})
 
 
 def clamp_limit(limit):
@@ -13,7 +15,7 @@ def clamp_limit(limit):
 
 def _clean(value):
     if isinstance(value, dict):
-        return {k: _clean(v) for k, v in value.items() if v is not None}
+        return {k: _clean(v) for k, v in value.items() if v is not None and k not in SECRET_FIELDS}
     if isinstance(value, list):
         return [_clean(v) for v in value]
     if hasattr(value, 'isoformat'):

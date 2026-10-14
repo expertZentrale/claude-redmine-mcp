@@ -133,3 +133,15 @@ def test_connection_errors_become_tool_errors(ro):
 
     with pytest.raises(ToolError, match='not reachable'):
         ro.call('get_issue', issue_id=1)
+
+
+@pytest.mark.parametrize(
+    ('tool', 'arguments'), [('get_current_user', {}), ('redmine_get', {'resource': 'user', 'resource_id': 'current'})]
+)
+def test_api_key_is_never_returned(ro, tool, arguments):
+    ro.respond({'user': {'id': 742, 'login': 'bot', 'api_key': 'leaked', 'nested': [{'api_key': 'leaked'}]}})
+
+    result = ro.call(tool, **arguments)
+
+    assert result['login'] == 'bot'
+    assert 'leaked' not in json.dumps(result)
