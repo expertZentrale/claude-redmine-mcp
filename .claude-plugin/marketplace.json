@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "expert-redmine",
+  "description": "Redmine integration for Claude Code",
+  "owner": {
+    "name": "expert Zentrale"
+  },
+  "plugins": [
+    {
+      "name": "redmine",
+      "description": "Redmine MCP server acting as a dedicated Redmine user, read-only by default.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

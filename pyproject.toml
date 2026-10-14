@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "redmine-mcp"
+dynamic = ["version"]
+description = "MCP server for Redmine (standard, redmine_expert_helpdesk, redmine_expert_agile, RedmineUP) with a read-only mode"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{name = "expert Zentrale"}]
+dependencies = [
+    "mcp>=2.3,<3",
+    "python-redmine-expert @ git+https://github.com/expertZentrale/python-redmine.git@v3.2.0",
+]
+
+[project.urls]
+Source = "https://github.com/expertZentrale/claude-redmine-mcp"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+redmine-mcp = "redmine_mcp.server:main"
+
+[tool.hatch.version]
+path = "src/redmine_mcp/__init__.py"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/redmine_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "single"
