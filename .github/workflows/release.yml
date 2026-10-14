@@ -21,16 +21,22 @@ jobs:
           - {platform: linux-x64, runner: ubuntu-22.04}
           - {platform: linux-arm64, runner: ubuntu-22.04-arm}
           - {platform: darwin-arm64, runner: macos-14}
-          - {platform: darwin-x64, runner: macos-15-intel}
+          # cryptography >= 49 ships no Intel macOS wheels, a source build links the wrong OpenSSL
+          - {platform: darwin-x64, runner: macos-15-intel, constraints: 'cryptography<49'}
           - {platform: windows-x64, runner: windows-2022}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python packaging/set_version.py "${{ inputs.version }}"
-      - run: pip install . 'pyinstaller>=6.10'
+      - name: Install
+        shell: bash
+        env:
+          CONSTRAINTS: ${{ matrix.constraints }}
+        # Unquoted on purpose: empty on most platforms, and expansion cannot turn < into a redirection
+        run: pip install --only-binary=cryptography . 'pyinstaller>=6.10' $CONSTRAINTS
       - name: Build
         run: pyinstaller --noconfirm --clean --onedir --name redmine-mcp packaging/entry.py
       - name: Smoke test
@@ -43,7 +49,7 @@ jobs:
       - name: Archive (tar.gz)
         if: runner.os != 'Windows'
         run: tar -czf "redmine-mcp-${{ inputs.version }}-${{ matrix.platform }}.tar.gz" -C dist redmine-mcp
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform }}
           path: redmine-mcp-${{ inputs.version }}-${{ matrix.platform }}.*
@@ -53,11 +59,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
