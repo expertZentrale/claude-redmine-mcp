@@ -34,7 +34,10 @@ Hinweis: Änderungen erscheinen in Redmine als Aktionen von `claude-bot`, nicht 
 
 ## Installation als Plugin
 
-Voraussetzung: [uv](https://docs.astral.sh/uv/) (`uvx` im `PATH`), Python ≥ 3.10.
+Keine Voraussetzungen: weder Python noch uv. Beim ersten Start lädt `bin/redmine-mcp` (Windows:
+`bin/redmine-mcp.cmd`) das fertige Binary für die eigene Plattform aus dem GitHub-Release, prüft es gegen die
+SHA256-Summe in `bin/SHA256SUMS` und legt es im Plugin-Datenverzeichnis ab. Danach startet es sofort.
+Unterstützt: Linux x64/arm64, macOS Apple Silicon/Intel, Windows x64.
 
 ```
 /plugin marketplace add expertZentrale/claude-redmine-mcp
@@ -55,6 +58,8 @@ Beim Aktivieren fragt Claude Code die Optionen ab (der API-Key wird als sensibel
 Lokal testen ohne Installation: `claude --plugin-dir /pfad/zu/claude-redmine-mcp`, dann `/mcp`.
 
 ### Ohne Plugin (nur MCP-Server)
+
+Mit [uv](https://docs.astral.sh/uv/) direkt aus dem Repo, ohne Binary:
 
 ```bash
 claude mcp add redmine \
@@ -82,3 +87,18 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check .
 npx @modelcontextprotocol/inspector uv run redmine-mcp       # mit REDMINE_* im Environment
 ```
+
+Lokales Binary bauen und über den Launcher starten (`REDMINE_MCP_BINARY` überspringt den Download):
+
+```bash
+pyinstaller --noconfirm --onedir --name redmine-mcp packaging/entry.py
+python packaging/smoke_test.py dist/redmine-mcp/redmine-mcp
+REDMINE_MCP_BINARY=$PWD/dist/redmine-mcp/redmine-mcp claude --plugin-dir .
+```
+
+## Release
+
+*Actions → Release → Run workflow* mit der neuen Version (z. B. `0.2.0`). Der Workflow baut alle Plattformen,
+testet jedes Binary per MCP-Handshake, veröffentlicht das GitHub-Release und schreibt erst danach Version und
+Prüfsummen (`bin/version.txt`, `bin/SHA256SUMS`, `plugin.json`) nach `main`. Nutzer erhalten die neue Version
+mit `/plugin marketplace update expert-redmine`.

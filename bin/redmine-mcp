@@ -1,0 +1,75 @@
+#!/bin/sh
+# Starts the Redmine MCP server binary for this platform, downloading and verifying it on first use.
+# stdout belongs to the MCP protocol, every message goes to stderr.
+set -eu
+
+BIN_DIR=$(cd "$(dirname "$0")" && pwd)
+VERSION=$(tr -d ' \r\n' < "$BIN_DIR/version.txt")
+RELEASE_URL=${REDMINE_MCP_RELEASE_URL:-https://github.com/expertZentrale/claude-redmine-mcp/releases/download}
+
+say() { echo "redmine-mcp launcher: $*" >&2; }
+fail() { say "$*"; exit 1; }
+
+# Development: run a local build or any other binary
+if [ -n "${REDMINE_MCP_BINARY:-}" ]; then
+    exec "$REDMINE_MCP_BINARY" "$@"
+fi
+
+case "$(uname -s)" in
+    Linux) os=linux ;;
+    Darwin) os=darwin ;;
+    *) fail "unsupported OS $(uname -s)" ;;
+esac
+case "$(uname -m)" in
+    x86_64 | amd64) arch=x64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) fail "unsupported CPU $(uname -m)" ;;
+esac
+platform="$os-$arch"
+asset="redmine-mcp-$VERSION-$platform.tar.gz"
+
+# CLAUDE_PLUGIN_DATA survives plugin updates, an unexpanded placeholder means it is not available
+data=${REDMINE_MCP_DATA:-}
+case "$data" in '' | '${'*) data="${XDG_CACHE_HOME:-$HOME/.cache}/redmine-mcp" ;; esac
+target="$data/$VERSION/$platform"
+exe="$target/redmine-mcp/redmine-mcp"
+
+if [ ! -x "$exe" ]; then
+    expected=$(awk -v a="$asset" '$2 == a { print $1 }' "$BIN_DIR/SHA256SUMS")
+    [ -n "$expected" ] || fail "no checksum for $asset in SHA256SUMS, version $VERSION has no build for $platform"
+
+    mkdir -p "$data/$VERSION"
+    tmp=$(mktemp -d "$data/$VERSION/.download.XXXXXX")
+    trap 'rm -rf "$tmp"' EXIT
+
+    say "downloading $asset"
+    if command -v curl > /dev/null 2>&1; then
+        curl -fsSL --retry 3 -o "$tmp/$asset" "$RELEASE_URL/v$VERSION/$asset" || fail "download of $RELEASE_URL/v$VERSION/$asset failed"
+    elif command -v wget > /dev/null 2>&1; then
+        wget -q -O "$tmp/$asset" "$RELEASE_URL/v$VERSION/$asset" || fail "download of $RELEASE_URL/v$VERSION/$asset failed"
+    else
+        fail "neither curl nor wget is installed"
+    fi
+
+    if command -v sha256sum > /dev/null 2>&1; then
+        actual=$(sha256sum "$tmp/$asset" | awk '{ print $1 }')
+    else
+        actual=$(shasum -a 256 "$tmp/$asset" | awk '{ print $1 }')
+    fi
+    [ "$actual" = "$expected" ] || fail "checksum mismatch for $asset (expected $expected, got $actual), not running it"
+
+    mkdir "$tmp/out"
+    tar -xzf "$tmp/$asset" -C "$tmp/out"
+    # Another session may have finished first, its copy is just as good
+    [ -x "$exe" ] || mv "$tmp/out" "$target"
+    rm -rf "$tmp"
+    trap - EXIT
+
+    # Builds of older plugin versions are not needed anymore
+    for old in "$data"/*; do
+        [ "$old" = "$data/$VERSION" ] || rm -rf "$old"
+    done
+    say "installed $VERSION for $platform"
+fi
+
+exec "$exe" "$@"

@@ -4,6 +4,7 @@ Tool registration: write tools are left out entirely in read-only mode, redminel
 
 import functools
 
+import requests
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from redminelib import exceptions
@@ -25,6 +26,10 @@ def _translate(fn):
             return fn(*args, **kwargs)
         except ReadOnlyViolation as e:
             raise ToolError(str(e)) from e
+        except requests.exceptions.Timeout as e:
+            raise ToolError('Redmine did not answer in time, try again or raise REDMINE_TIMEOUT') from e
+        except requests.exceptions.RequestException as e:
+            raise ToolError(f'Redmine is not reachable: {e.__class__.__name__}') from e
         except exceptions.BaseRedmineError as e:
             for cls, message in _MESSAGES.items():
                 if isinstance(e, cls):

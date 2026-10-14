@@ -124,3 +124,12 @@ def test_helpdesk_ticket_with_messages(ro):
 
     assert ro.requests[0][1] == 'https://redmine.test/helpdesk/tickets/3.json'
     assert result['messages'] == [{'id': 1}]
+
+
+def test_connection_errors_become_tool_errors(ro):
+    import requests
+
+    ro.session.request.side_effect = requests.exceptions.ConnectionError('boom')
+
+    with pytest.raises(ToolError, match='not reachable'):
+        ro.call('get_issue', issue_id=1)

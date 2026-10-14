@@ -12,6 +12,7 @@ license = "Apache-2.0"
 authors = [{name = "expert Zentrale"}]
 dependencies = [
     "mcp>=2.3,<3",
+    "requests>=2.32",
     "python-redmine-expert @ git+https://github.com/expertZentrale/python-redmine.git@v3.2.0",
 ]
 
@@ -19,7 +20,7 @@ dependencies = [
 Source = "https://github.com/expertZentrale/claude-redmine-mcp"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "pyinstaller>=6.10"]
 
 [project.scripts]
 redmine-mcp = "redmine_mcp.server:main"

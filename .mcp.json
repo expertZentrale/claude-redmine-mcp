@@ -1,14 +1,15 @@
 {
   "mcpServers": {
     "redmine": {
-      "command": "uvx",
-      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}", "redmine-mcp"],
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/redmine-mcp",
+      "args": [],
       "env": {
         "REDMINE_URL": "${user_config.redmine_url}",
         "REDMINE_API_KEY": "${user_config.redmine_api_key}",
         "REDMINE_READ_ONLY": "${user_config.read_only}",
         "REDMINE_TOOLSETS": "${user_config.toolsets}",
-        "REDMINE_VERIFY_SSL": "${user_config.verify_ssl}"
+        "REDMINE_VERIFY_SSL": "${user_config.verify_ssl}",
+        "REDMINE_MCP_DATA": "${CLAUDE_PLUGIN_DATA}"
       }
     }
   }

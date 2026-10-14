@@ -1,0 +1,86 @@
+name: Release
+
+# Builds the server for every platform, publishes a GitHub release and only then records the version and
+# checksums on main, so the launcher on main never points to a release that does not exist yet.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without v, e.g. 0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {platform: linux-x64, runner: ubuntu-22.04}
+          - {platform: linux-arm64, runner: ubuntu-22.04-arm}
+          - {platform: darwin-arm64, runner: macos-14}
+          - {platform: darwin-x64, runner: macos-15-intel}
+          - {platform: windows-x64, runner: windows-2022}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python packaging/set_version.py "${{ inputs.version }}"
+      - run: pip install . 'pyinstaller>=6.10'
+      - name: Build
+        run: pyinstaller --noconfirm --clean --onedir --name redmine-mcp packaging/entry.py
+      - name: Smoke test
+        shell: bash
+        run: python packaging/smoke_test.py "dist/redmine-mcp/redmine-mcp$([ '${{ runner.os }}' = Windows ] && echo .exe)"
+      - name: Archive (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/redmine-mcp -DestinationPath "redmine-mcp-${{ inputs.version }}-${{ matrix.platform }}.zip"
+      - name: Archive (tar.gz)
+        if: runner.os != 'Windows'
+        run: tar -czf "redmine-mcp-${{ inputs.version }}-${{ matrix.platform }}.tar.gz" -C dist redmine-mcp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: redmine-mcp-${{ inputs.version }}-${{ matrix.platform }}.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Record version and checksums
+        run: |
+          set -eu
+          if git ls-remote --exit-code --tags origin "v${{ inputs.version }}" > /dev/null; then
+            echo "Tag v${{ inputs.version }} exists already" >&2
+            exit 1
+          fi
+          python packaging/set_version.py "${{ inputs.version }}"
+          (cd assets && sha256sum redmine-mcp-*) > bin/SHA256SUMS
+          cat bin/SHA256SUMS
+      - name: Commit, tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Release ${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
+          gh release create "v${{ inputs.version }}" assets/* bin/SHA256SUMS \
+            --title "v${{ inputs.version }}" --generate-notes
+          git push origin HEAD:main
