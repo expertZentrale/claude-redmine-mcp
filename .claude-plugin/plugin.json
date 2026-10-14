@@ -1,6 +1,6 @@
 {
   "name": "redmine",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Redmine MCP server (issues, projects, time tracking, wiki, redmine_expert_helpdesk, redmine_expert_agile, RedmineUP) acting as a dedicated Redmine user, read-only by default.",
   "author": {
     "name": "expert Zentrale"
