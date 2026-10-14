@@ -39,6 +39,17 @@ class Server:
     def respond(self, *payloads, status_code=200):
         self.session.request.side_effect = [FakeResponse(p, status_code) for p in payloads]
 
+    def route(self, responses):
+        """
+        Answers by URL path, for tools that send requests in parallel. Unknown paths get a 404.
+        """
+
+        def answer(method, url, **kwargs):
+            path = url.removeprefix(self.settings.url)
+            return FakeResponse(responses[path]) if path in responses else FakeResponse(None, 404)
+
+        self.session.request.side_effect = answer
+
     def call(self, name, **arguments):
         result = asyncio.run(self.mcp.call_tool(name, arguments))
         return json.loads(result.content[0].text)

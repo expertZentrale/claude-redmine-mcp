@@ -10,7 +10,6 @@ WRITE_TOOLS = {
     'create_issue_relation',
     'save_wiki_page',
     'create_helpdesk_ticket',
-    'update_helpdesk_ticket',
     'create_sprint',
     'update_sprint',
     'update_issue_agile_data',

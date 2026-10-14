@@ -18,8 +18,9 @@ Drei unabhängige Ebenen:
    gesendet wird – auch aus Code-Pfaden, die kein Tool sind.
 3. **Redmine-Rechte:** Der Bot-User darf nur, was seine Rolle erlaubt (siehe unten).
 
-Auch im Schreibmodus gibt es bewusst keine Lösch-Tools, und das Feld `uploads` wird abgelehnt (redminelib würde
-sonst lokale Dateien lesen und hochladen).
+Auch im Schreibmodus gibt es bewusst keine Lösch-Tools und nichts, was Kunden mailt. Abgelehnt werden die Felder
+`uploads` (redminelib würde lokale Dateien lesen und hochladen) und `helpdesk_init` (würde den Kunden anmailen).
+`api_key` und `password` werden aus allen Ergebnissen entfernt.
 
 ## Redmine vorbereiten
 
@@ -72,12 +73,15 @@ claude mcp add redmine \
 | Toolset           | Lesen                                                                                                                                                                                    | Schreiben (nur `read_only=false`)                                                     |
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
 | `standard`        | `get_current_user`, `list_projects`, `get_project`, `search_issues`, `get_issue`, `list_time_entries`, `list_versions`, `list_project_members`, `list_wiki_pages`, `get_wiki_page`, `search`, `list_reference_data`, `get_attachment` | `create_issue`, `update_issue`, `log_time`, `create_issue_relation`, `save_wiki_page` |
-| `expert_helpdesk` | `list_helpdesk_tickets`, `get_helpdesk_ticket`, `list_helpdesk_contacts`, `get_helpdesk_contact`, `list_helpdesk_mailboxes`, `get_helpdesk_project_settings`                              | `create_helpdesk_ticket`, `update_helpdesk_ticket`                                     |
-| `expert_agile`    | `list_sprints`, `get_sprint`, `get_issue_agile_data`                                                                                                                                     | `create_sprint`, `update_sprint`, `update_issue_agile_data`                            |
+| `expert_helpdesk` | `search_helpdesk_tickets` (Kunde, wartet auf Antwort, SLA), `list_helpdesk_tickets`, `get_helpdesk_ticket`, `list_helpdesk_contacts`, `get_helpdesk_contact`, `list_helpdesk_mailboxes`, `get_helpdesk_project_settings` | `create_helpdesk_ticket` (ohne Mail an den Kunden) |
+| `expert_agile`    | `get_sprint_overview` (Story Points gesamt/erledigt, pro Person und Status), `list_sprints`, `get_sprint`, `get_issue_agile_data` | `create_sprint`, `update_sprint`, `update_issue_agile_data` |
 | `redmineup`       | `list_contacts`, `get_contact`, `list_deals`, `get_deal`, `list_redmineup_tickets`, `get_redmineup_ticket`, `list_redmineup_sprints`, `get_checklist`                                     | `add_crm_note`, `add_checklist_item`, `update_checklist_item`                          |
 | immer             | `redmine_get`, `redmine_list`                                                                                                                                                             | –                                                                                     |
 
 Listen sind gepaged (Default 25, max. 100, `next_offset` im Ergebnis); lange Texte werden in Listen gekürzt.
+
+Welche Informationen aus Redmine und den Plugins genutzt werden, über welche Endpunkte, mit welchen Filtern
+und welchen Rechten: [docs/redmine-data.md](docs/redmine-data.md).
 
 ## Entwicklung
 

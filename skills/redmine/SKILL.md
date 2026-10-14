@@ -1,38 +1,99 @@
 ---
 name: redmine
-description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets, sprints, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, sprints or spent time in Redmine.
+description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets and customers, SLA, sprints and story points, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, customers, SLA, sprints, story points or spent time in Redmine.
 ---
 
 # Working with Redmine
 
 The `redmine` MCP server acts as one dedicated Redmine user. Everything is limited to what that user can see and
-do, a 403/404 usually means missing permissions or project membership, not a missing object. `get_current_user`
-shows the user and its project memberships.
+do: a 403/404 usually means missing permissions or project membership, not a missing object. `get_current_user`
+shows the user and its project memberships, answers only cover those projects - say so when it matters.
 
-## Read-only mode
+## Read-only and write mode
 
 By default the server is read-only: there are no tools that change anything, and any write is blocked on the HTTP
 level. If the user asks for a change, say that the server runs read-only and that it can be switched with the
 plugin's `read_only` option. Do not try to work around it.
 
-In read-write mode every change is made in the name of the bot user. Confirm the exact change with the user before
-calling a write tool, and prefer adding a comment (`update_issue` with `notes`) over overwriting fields.
+In read-write mode every change is made in the name of the bot user. Confirm the exact change with the user
+before calling a write tool. Redmine silently ignores changes the user may not make (e.g. a status the workflow
+does not allow), so:
 
-## Finding things
+- before a status change fetch `get_issue(id, include=["allowed_statuses"])` and pick a status from that list,
+- after the change read the issue again and report what actually changed.
 
-- `#1234` is an issue id → `get_issue(1234)`, its `journals` are the comments and field changes.
+Nothing in this server mails customers. Creating helpdesk tickets does not send mail, `helpdesk_init` is refused.
+
+## Keep results small
+
+- Ask for counts first: any list tool with `limit=1` returns `total_count`.
+- Prefer filters over full text search. `search` (Redmine full text) matches signatures, quotes and mentions
+  and easily returns hundreds of hits; use it for topics, not for people.
+- Lists are paged, follow `next_offset` only when needed. Long texts in lists are shortened, fetch the single
+  item for the full text.
+
+## Issues (standard Redmine)
+
+- `#1234` is an issue id → `get_issue(1234)`. `journals` are comments and field changes, the original mail of a
+  helpdesk ticket is the `description`.
 - Projects take the identifier (`support`) or the numeric id.
-- `search_issues` defaults to open issues, use `status="*"` for all. `assigned_to="me"` means the bot user.
-  Custom fields filter as `filters={"cf_<id>": "value"}`, operators work as in Redmine: `">=2026-01-01"`, `"~text"`.
-- Ids for statuses, trackers, priorities and time entry activities come from `list_reference_data`.
-- `search` is the Redmine full text search (issues, wiki, news, documents, changesets, forums).
-- Lists are paged: keep `limit` small and follow `next_offset` only when needed. Long texts in lists are
-  shortened, fetch the single item for the full text.
-- Anything without a dedicated tool: `redmine_list` / `redmine_get` with the resource name in snake_case,
-  e.g. `redmine_list("news", {"project_id": "support"})`, `redmine_list("issue_category", {"project_id": "x"})`.
+- `search_issues` defaults to open issues, `status="*"` for all. `assigned_to="me"` is the bot user, not the
+  person you are talking to - use their user id.
+- Filters use the Redmine query syntax in `filters`, an operator prefix in the value: `"~text"` contains,
+  `">=2026-01-01"`, `"><2026-01-01|2026-01-31"`, `"!5"` not, `"*"` any, `"!*"` none. Custom fields: `cf_<id>`.
+  Several ids: `"issue_id": "1,2,3"`.
+- Unknown filter names are silently ignored by Redmine and return unfiltered results. If a filtered count looks
+  like the unfiltered one, compare with `limit=1` without the filter.
+- Ids of statuses, trackers, priorities, activities, saved queries: `list_reference_data`.
 
-## Plugins
+## Helpdesk (redmine_expert_helpdesk, toolset `expert_helpdesk`)
 
-Toolsets are enabled per installation (`toolsets` option): `expert_helpdesk` (helpdesk tickets, contacts,
-mailboxes, SLA), `expert_agile` (sprints, story points), `redmineup` (RedmineUP CRM contacts/deals, helpdesk
-tickets, checklists). A "plugin is not installed" error means the Redmine instance lacks that plugin.
+Helpdesk tickets are normal issues plus a customer (contact), a mailbox, a mail log and SLA times.
+
+| Question | Call |
+|---|---|
+| Tickets of a customer | `search_helpdesk_tickets(customer="kaden", status="*")` (name or email, contains) |
+| Customers waiting for an answer | `search_helpdesk_tickets(awaiting_agent=true)` |
+| SLA breached / at risk | `search_helpdesk_tickets(sla_reaction="breached")`, values `met running warning breached breached_done`, same for `sla_solution` |
+| Contact data | `list_helpdesk_contacts(project, search=...)` or `email=` (exact) |
+| SLA state and mail log of one ticket | `get_helpdesk_ticket(id)` |
+| Mail texts | `get_issue(id)`: description (first mail) and journals (replies, further mails) |
+| SLA times, autoresponder, settings | `get_helpdesk_project_settings(project)` |
+
+- `list_helpdesk_tickets` only pages through all tickets of a project (closed ones included); the helpdesk API
+  ignores every filter there. Filter with `search_helpdesk_tickets`.
+- The mail log in `get_helpdesk_ticket` has no mail body: `direction` `in` = customer mail, `out` = reply sent,
+  `init` = contact assigned.
+- Comments and status changes on helpdesk tickets go through `update_issue`, which also records the SLA first
+  response. A comment does not mail the customer - replies to customers are made in Redmine itself.
+- The same filters work in `search_issues` too: `helpdesk_kunde`, `helpdesk_awaiting_agent` (`1`/`0`),
+  `helpdesk_sla_reaction`, `helpdesk_sla_solution`; sort by them with `sort="helpdesk_sla_reaction"`.
+
+## Agile (redmine_expert_agile, toolset `expert_agile`)
+
+| Question | Call |
+|---|---|
+| What is in the current sprint, points done, points per person | `get_sprint_overview(project)` or `sprint="<id>"` |
+| Sprints of a project | `list_sprints(project)` (needs the manage_expert_agile_sprints permission) |
+| Story points and sprint of one issue | `get_issue_agile_data(id)` |
+| Issues by story points | `search_issues(filters={"story_points": ">=5"})`, `"*"` estimated, `"!*"` not estimated |
+| Issues of a sprint without totals | `search_issues(filters={"expert_agile_sprint_id": "active"}, status="*")` or `"5|7"` |
+
+- Story points and sprint are not part of the issue data, `get_sprint_overview` fetches them per issue
+  (up to 200 issues, `truncated` says when there are more).
+- There is no velocity or burndown API, compute it from sprints and their issues when asked. The plugin's own
+  "velocity" chart counts created vs. closed issues, not story points.
+- Sprint status: `open`, `active` (only one per project, activating another one reopens the previous one),
+  `closed` (refused while the sprint has open issues).
+
+## RedmineUP plugins (toolset `redmineup`)
+
+CRM contacts and deals (`list_contacts`, `get_contact`, `list_deals`, `get_deal`), RedmineUP helpdesk tickets
+(`list_redmineup_tickets`, `get_redmineup_ticket`), Agile sprints (`list_redmineup_sprints`) and checklists
+(`get_checklist`). A "plugin is not installed" error means the Redmine instance lacks that plugin.
+
+## Anything else
+
+`redmine_list` / `redmine_get` read every resource redminelib knows, with the resource name in snake_case:
+`redmine_list("news", {"project_id": "support"})`, `redmine_list("issue_category", {"project_id": "x"})`,
+`redmine_get("user", "42")`, `redmine_get("wiki_page", "Start", {"project_id": "x"})`.

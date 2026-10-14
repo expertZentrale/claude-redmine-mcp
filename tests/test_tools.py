@@ -145,3 +145,106 @@ def test_api_key_is_never_returned(ro, tool, arguments):
 
     assert result['login'] == 'bot'
     assert 'leaked' not in json.dumps(result)
+
+
+def test_helpdesk_init_is_refused(rw):
+    # redmine_expert_helpdesk would mail the customer
+    with pytest.raises(ToolError, match='helpdesk_init'):
+        rw.call('create_issue', project='p', subject='x', extra={'helpdesk_init': {'contact_email': 'a@b.c'}})
+
+    rw.session.request.assert_not_called()
+
+
+def test_search_helpdesk_tickets_uses_issue_filters(ro):
+    ro.respond({'issues': [], 'total_count': 0, 'limit': 25, 'offset': 0})
+
+    ro.call('search_helpdesk_tickets', project='34', customer='kaden', awaiting_agent=True, sla_reaction='breached')
+
+    method, url, kwargs = ro.requests[0]
+    assert url == 'https://redmine.test/issues.json'
+    assert kwargs['params'] == {
+        'project_id': '34',
+        'status_id': 'open',
+        'helpdesk_kunde': '~kaden',
+        'helpdesk_awaiting_agent': 1,
+        'helpdesk_sla_reaction': 'breached',
+        'limit': 25,
+        'offset': 0,
+    }
+
+
+def test_list_helpdesk_tickets_has_no_filters(ro):
+    import asyncio
+
+    tool = next(t for t in asyncio.run(ro.mcp.list_tools()) if t.name == 'list_helpdesk_tickets')
+    assert set(tool.input_schema['properties']) == {'project', 'limit', 'offset'}
+
+
+def test_sprint_overview_totals(ro):
+    def issue(id_, status, closed, assignee=None):
+        data = {
+            'id': id_,
+            'subject': f'S{id_}',
+            'tracker': {'name': 'Story'},
+            'status': {'name': status, 'is_closed': closed},
+        }
+        if assignee:
+            data['assigned_to'] = {'id': 1, 'name': assignee}
+        return data
+
+    ro.route(
+        {
+            '/issues.json': {
+                'issues': [issue(1, 'Erledigt', True, 'Ann'), issue(2, 'Neu', False, 'Ann'), issue(3, 'Neu', False)],
+                'total_count': 3,
+                'limit': 100,
+                'offset': 0,
+            },
+            '/issues/1/expert_agile_data.json': {
+                'expert_agile_data': {'issue_id': 1, 'story_points': 5, 'sprint_id': 7}
+            },
+            '/issues/2/expert_agile_data.json': {
+                'expert_agile_data': {'issue_id': 2, 'story_points': 3, 'sprint_id': 7}
+            },
+            '/issues/3/expert_agile_data.json': {
+                'expert_agile_data': {'issue_id': 3, 'story_points': None, 'sprint_id': 7}
+            },
+        }
+    )
+
+    result = ro.call('get_sprint_overview', project='scrum')
+
+    issues_request = next(r for r in ro.requests if r[1].endswith('/issues.json'))
+    assert issues_request[2]['params']['expert_agile_sprint_id'] == 'active'
+    assert result['totals'] == {'issues': 3, 'story_points': 8, 'done_story_points': 5, 'unestimated_issues': 1}
+    assert result['by_assignee']['Ann'] == {'issues': 2, 'open_issues': 1, 'story_points': 8, 'done_story_points': 5}
+    assert result['by_assignee']['(unassigned)']['issues'] == 1
+    assert result['truncated'] is False
+    assert result['ignored_issues_not_in_sprint'] == 0
+
+
+def test_sprint_overview_drops_issues_outside_the_sprint(ro):
+    # Where the agile module is off Redmine ignores the sprint filter and returns all issues
+    ro.route(
+        {
+            '/issues.json': {
+                'issues': [{'id': 1, 'subject': 'X', 'tracker': {'name': 'Bug'}, 'status': {'name': 'Neu'}}],
+                'total_count': 1,
+                'limit': 100,
+                'offset': 0,
+            },
+            '/issues/1/expert_agile_data.json': {
+                'expert_agile_data': {'issue_id': 1, 'story_points': None, 'sprint_id': None}
+            },
+        }
+    )
+
+    result = ro.call('get_sprint_overview', project='p')
+
+    assert result['issues'] == [] and result['ignored_issues_not_in_sprint'] == 1
+    assert result['totals']['issues'] == 0
+
+
+def test_sprint_overview_rejects_bad_sprint(ro):
+    with pytest.raises(ToolError, match='active'):
+        ro.call('get_sprint_overview', project='scrum', sprint='current')

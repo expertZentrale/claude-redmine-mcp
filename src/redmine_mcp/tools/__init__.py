@@ -6,8 +6,9 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from .. import serialize
 
-# redminelib reads the local files named in uploads, so the model must never be able to pass them
-_FORBIDDEN_FIELDS = ('uploads',)
+# uploads: redminelib reads and uploads the local files named there.
+# helpdesk_init: redmine_expert_helpdesk mails the customer with send_mail, nothing may do that through extra.
+_FORBIDDEN_FIELDS = ('uploads', 'helpdesk_init')
 
 
 def compact(**fields):
