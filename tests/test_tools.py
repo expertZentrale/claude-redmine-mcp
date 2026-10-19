@@ -180,6 +180,84 @@ def test_list_helpdesk_tickets_has_no_filters(ro):
     assert set(tool.input_schema['properties']) == {'project', 'limit', 'offset'}
 
 
+def test_list_helpdesk_kb_entries(ro):
+    ro.respond(
+        {
+            'helpdesk_kb_entries': [{'id': 17, 'status': 'pending', 'problem': 'VPN drops', 'solution': 'x' * 1000}],
+            'total_count': 1,
+            'limit': 25,
+            'offset': 0,
+        }
+    )
+
+    result = ro.call('list_helpdesk_kb_entries', project='support', status='pending', search='vpn', issue_id=4711)
+
+    method, url, kwargs = ro.requests[0]
+    assert (method, url) == ('get', 'https://redmine.test/projects/support/helpdesk/kb_entries.json')
+    assert kwargs['params'] == {
+        'project_id': 'support',
+        'status': 'pending',
+        'q': 'vpn',
+        'issue_id': 4711,
+        'limit': 25,
+        'offset': 0,
+    }
+    assert result['items'][0]['problem'] == 'VPN drops'
+    assert len(result['items'][0]['solution']) < 400
+
+
+def test_get_helpdesk_kb_entry(ro):
+    ro.respond({'helpdesk_kb_entry': {'id': 17, 'issue': {'id': 4711}, 'status': 'approved', 'indexed': True}})
+
+    result = ro.call('get_helpdesk_kb_entry', entry_id=17)
+
+    assert ro.requests[0][1] == 'https://redmine.test/helpdesk/kb_entries/17.json'
+    assert result['indexed'] is True
+
+
+def test_create_helpdesk_kb_entry_is_pending_by_default(rw):
+    rw.respond({'helpdesk_kb_entry': {'id': 18, 'status': 'pending', 'vector_sync': 'removed'}})
+
+    result = rw.call('create_helpdesk_kb_entry', project='support', issue_id=4711, problem='VPN drops')
+
+    method, url, kwargs = rw.requests[0]
+    assert (method, url) == ('post', 'https://redmine.test/projects/support/helpdesk/kb_entries.json')
+    assert json.loads(kwargs['data']) == {
+        'helpdesk_kb_entry': {'issue_id': 4711, 'problem': 'VPN drops', 'status': 'pending'}
+    }
+    assert result['item']['vector_sync'] == 'removed'
+
+
+def test_update_helpdesk_kb_entry_returns_vector_sync(rw):
+    # Unlike most Redmine resources the plugin answers an update with the entry
+    rw.respond({'helpdesk_kb_entry': {'id': 17, 'solution': 'MTU 1400', 'vector_sync': 'indexed'}})
+
+    result = rw.call('update_helpdesk_kb_entry', entry_id=17, solution='MTU 1400')
+
+    method, url, kwargs = rw.requests[0]
+    assert (method, url) == ('put', 'https://redmine.test/helpdesk/kb_entries/17.json')
+    assert json.loads(kwargs['data']) == {'helpdesk_kb_entry': {'solution': 'MTU 1400'}}
+    assert result == {'ok': True, 'item': {'id': 17, 'solution': 'MTU 1400', 'vector_sync': 'indexed'}}
+
+
+def test_update_helpdesk_kb_entry_needs_a_change(rw):
+    with pytest.raises(ToolError, match='One of problem, solution, status'):
+        rw.call('update_helpdesk_kb_entry', entry_id=17)
+
+    rw.session.request.assert_not_called()
+
+
+@pytest.mark.parametrize(('decision', 'status'), [('approve', 'approved'), ('reject', 'rejected')])
+def test_curate_helpdesk_kb_entry(rw, decision, status):
+    rw.respond({'helpdesk_kb_entry': {'id': 17, 'status': status, 'vector_sync': 'indexed'}})
+
+    result = rw.call('curate_helpdesk_kb_entry', entry_id=17, decision=decision)
+
+    method, url, _ = rw.requests[0]
+    assert (method, url) == ('post', f'https://redmine.test/helpdesk/kb_entries/17/{decision}.json')
+    assert result['item']['status'] == status
+
+
 def test_sprint_overview_totals(ro):
     def issue(id_, status, closed, assignee=None):
         data = {

@@ -1,6 +1,6 @@
 # Welche Redmine-Daten der MCP-Server nutzt
 
-Diese Seite beschreibt, welche Informationen aus Redmine und den Plugins `redmine_expert_helpdesk` (0.21) und
+Diese Seite beschreibt, welche Informationen aus Redmine und den Plugins `redmine_expert_helpdesk` (0.23) und
 `redmine_expert_agile` (0.9) über den MCP-Server erreichbar sind, über welche REST-Endpunkte das passiert und
 welche Rechte der Bot-User dafür braucht. Grundlage ist der Quellcode der Plugins; Endpunkte, die keine
 API-Key-Anmeldung erlauben, sind für den Server nicht erreichbar.
@@ -42,6 +42,7 @@ Filter für `search_issues` folgen der Redmine-Syntax mit Operator-Präfix: `~te
 ## redmine_expert_helpdesk (Toolset `expert_helpdesk`)
 
 Ein Helpdesk-Ticket ist ein normales Issue plus Kunde (Kontakt), Postfach, Mail-Protokoll und SLA-Zeiten.
+Dazu kommt die Wissensbasis mit Problem/Lösung-Paaren aus geschlossenen Tickets.
 
 ### Was die Helpdesk-API liefert
 
@@ -79,6 +80,31 @@ Diese Filter funktionieren auf `/issues.json` und damit in `search_issues` und `
 Nach denselben Feldern lässt sich sortieren (`sort=helpdesk_sla_reaction`). In der Issue-JSON tauchen die Werte
 nicht auf; dafür `get_helpdesk_ticket`.
 
+### Wissensbasis (ab Plugin 0.23)
+
+Beim Schließen eines Tickets extrahiert die KI ein Problem/Lösung-Paar. Freigegebene Einträge werden in einen
+Vektor-Store eingebettet und für KI-Antworten und Lösungsvorschläge genutzt; eingebettet wird nur das
+*Problem*. Die SQL-Tabelle ist das führende System, jede Änderung über die API bettet einen freigegebenen
+Eintrag sofort neu ein bzw. entfernt jeden anderen aus dem Store.
+
+| Information | Tool | Endpunkt | Rechte |
+|---|---|---|---|
+| Einträge eines Projekts, Filter Status, Freitext (Problem/Lösung), Ticket | `list_helpdesk_kb_entries` | `GET /projects/:id/helpdesk/kb_entries.json?status=…&q=…&issue_id=…` | `view_helpdesk_kb` |
+| Eintrag mit Ticket, Status, `indexed`, `curated` | `get_helpdesk_kb_entry` | `GET /helpdesk/kb_entries/:id.json` | `view_helpdesk_kb` |
+| **Schreiben:** Eintrag zu einem Ticket anlegen (Standard `pending`) | `create_helpdesk_kb_entry` | `POST /projects/:id/helpdesk/kb_entries.json` | `edit_helpdesk_kb` |
+| **Schreiben:** Problem/Lösung korrigieren, Status `approved`/`pending` | `update_helpdesk_kb_entry` | `PUT /helpdesk/kb_entries/:id.json` | `edit_helpdesk_kb` |
+| **Schreiben:** Freigeben/Ablehnen | `curate_helpdesk_kb_entry` | `POST /helpdesk/kb_entries/:id/{approve,reject}.json` | `edit_helpdesk_kb` |
+
+Status: `pending` (wartet auf Prüfung), `approved` (eingebettet), `skipped` (KI fand keine Lösung, ohne
+Statusfilter ausgeblendet), `rejected` (aus dem Store entfernt, bleibt aber, damit eine neue Extraktion ihn nicht
+zurückbringt). Von Hand angelegte, geänderte oder kuratierte Einträge (`curated`) überschreibt eine neue
+Extraktion nicht.
+
+Jede Schreib-Antwort enthält `vector_sync`: `indexed` (freigegeben und durchsuchbar), `removed` (nicht
+freigegeben, nicht im Store), `not_configured` (KB aus oder nicht konfiguriert), `problem_blank` (kein
+Problemtext), `index_failed` / `unindex_failed` (Store nicht aktualisiert, erneut versuchen oder Index neu
+aufbauen lassen).
+
 ### Was bewusst nicht geht
 
 - **Antworten an Kunden** (`helpdesk_reply`) sind nur in der Redmine-Oberfläche möglich, nicht per API.
@@ -86,7 +112,11 @@ nicht auf; dafür `get_helpdesk_ticket`.
 - Kommentare über `update_issue` erfassen die SLA-Erstreaktion; über die Helpdesk-Ticket-API würde das nicht
   passieren, deshalb gibt es dafür kein eigenes Tool.
 - Mail-Protokoll und Kontakte sind nicht über die Redmine-Volltextsuche auffindbar.
-- Statistiken, Wissensdatenbank und KI-Funktionen haben keine API.
+- Statistiken und die übrigen KI-Funktionen haben keine API.
+- **Wissensbasis-Einträge löschen** sowie **Index neu aufbauen** (`reindex`) und **neu extrahieren**
+  (`reextract`, eine KI-Anfrage je Eintrag, überschreibt nicht kuratierte Einträge) bietet der Server nicht
+  an; das bleibt dem Reiter *Wissensbasis* bzw. `manage_helpdesk_kb` vorbehalten. Lesend sind Einträge
+  auch über `redmine_list("helpdesk_kb_entry", {"project_id": …})` erreichbar.
 
 ## redmine_expert_agile (Toolset `expert_agile`)
 
@@ -130,9 +160,9 @@ Checklisten von Issues. Schreiben: Notiz an Kontakt/Deal, Checklisten-Punkte anl
 | Zweck | Rechte |
 |---|---|
 | Nur lesen, Standard | Projekt anzeigen, Tickets anzeigen, Aufwände anzeigen, Wiki anzeigen |
-| + Helpdesk lesen | `view_helpdesk_info` (Kontakte, Einstellungen); Postfächer zusätzlich `manage_helpdesk` |
+| + Helpdesk lesen | `view_helpdesk_info` (Kontakte, Einstellungen); Postfächer zusätzlich `manage_helpdesk`; Wissensbasis `view_helpdesk_kb` |
 | + Agile lesen | `view_expert_agile_board`; Sprint-Liste zusätzlich `manage_expert_agile_sprints` |
-| Schreiben | zusätzlich Tickets bearbeiten, Notizen hinzufügen, Aufwände buchen, ggf. `edit_expert_agile_board`, `manage_expert_agile_backlog` |
+| Schreiben | zusätzlich Tickets bearbeiten, Notizen hinzufügen, Aufwände buchen, ggf. `edit_helpdesk_kb`, `edit_expert_agile_board`, `manage_expert_agile_backlog` |
 
 Für den Read-only-Betrieb reicht die erste Zeile plus die Plugin-Leserechte. Schreibrechte in Redmine sind dann
 ohne Wirkung, weil der Server ohnehin nichts schreibt.

@@ -13,7 +13,7 @@ authors = [{name = "expert Zentrale"}]
 dependencies = [
     "mcp>=2.3,<3",
     "requests>=2.32",
-    "python-redmine-expert @ git+https://github.com/expertZentrale/python-redmine.git@v3.2.0",
+    "python-redmine-expert @ git+https://github.com/expertZentrale/python-redmine.git@v3.3.0",
 ]
 
 [project.urls]

@@ -1,9 +1,13 @@
 """
-redmine_expert_helpdesk: tickets, contacts, mailboxes and project settings.
+redmine_expert_helpdesk: tickets, contacts, mailboxes, project settings and the knowledge base.
 
 The ticket list of the helpdesk API only pages (limit/offset) and silently ignores every filter, so filtered
 ticket lists go through /issues.json and the issue query filters the plugin adds (helpdesk_kunde,
 helpdesk_awaiting_agent, helpdesk_sla_reaction, helpdesk_sla_solution).
+
+Knowledge base entries are problem/solution pairs extracted from closed tickets, approved ones are embedded
+into a vector store for the AI answers. Deleting entries and the reindex/reextract jobs are left out: the
+server deletes nothing, and a re-extraction costs one AI call per entry and overwrites uncurated entries.
 """
 
 from typing import Annotated, Literal
@@ -11,10 +15,16 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from .. import serialize
-from . import changed, compact, merge_extra, page
+from . import changed, compact, merge_extra, page, require_one
 from .standard import Extra, Limit, Offset, Project
 
 SlaState = Literal['met', 'running', 'warning', 'breached', 'breached_done']
+KbEntryId = Annotated[int, Field(description='Id of the knowledge base entry, not of the ticket')]
+KB_PROBLEM = 'Problem as a customer would describe it, only this text is embedded and matched against new tickets'
+KbStatus = Annotated[
+    Literal['approved', 'pending'] | None,
+    Field(description='approved: embedded and used for AI answers, pending: waits for review'),
+]
 
 
 def register(tool, redmine):
@@ -97,6 +107,37 @@ def register(tool, redmine):
         """Helpdesk settings of a project: SLA times per priority, autoresponder, info requests, AI options."""
         return serialize.resource(redmine.helpdesk_project_setting.get(project))
 
+    @tool()
+    def list_helpdesk_kb_entries(
+        project: Project,
+        status: Annotated[
+            str | None,
+            Field(
+                description='pending, approved, skipped (no solution found), rejected, several comma-separated, '
+                'or all. Default: everything but skipped'
+            ),
+        ] = None,
+        search: Annotated[str | None, Field(description='Text in problem or solution, case-insensitive')] = None,
+        issue_id: Annotated[int | None, Field(description='Only the entry of this ticket')] = None,
+        limit: Limit = 25,
+        offset: Offset = 0,
+    ) -> dict:
+        """
+        Knowledge base of the helpdesk: problem/solution pairs extracted from closed tickets, most recently changed
+        first. Use it to find known solutions or entries waiting for review (status="pending"). Long texts are
+        shortened, get_helpdesk_kb_entry has them in full.
+        """
+        filters = compact(project_id=project, status=status, q=search, issue_id=issue_id)
+        return page(redmine.helpdesk_kb_entry, filters, limit, offset)
+
+    @tool()
+    def get_helpdesk_kb_entry(entry_id: KbEntryId) -> dict:
+        """
+        A knowledge base entry with its ticket, status, whether it is in the vector store (indexed) and whether a
+        person curated it (curated entries are never overwritten by a new extraction).
+        """
+        return serialize.resource(redmine.helpdesk_kb_entry.get(entry_id))
+
     @tool(write=True)
     def create_helpdesk_ticket(
         project: Project,
@@ -123,3 +164,55 @@ def register(tool, redmine):
             mailbox_id=mailbox_id,
         )
         return changed(redmine.helpdesk_ticket.create(**merge_extra(fields, extra)))
+
+    @tool(write=True)
+    def create_helpdesk_kb_entry(
+        project: Project,
+        issue_id: Annotated[int, Field(description='Ticket of the project the entry is about, one entry per ticket')],
+        problem: Annotated[str, Field(description=KB_PROBLEM)],
+        solution: str | None = None,
+        status: KbStatus = 'pending',
+    ) -> dict:
+        """
+        Adds a knowledge base entry for a ticket that has none. It counts as curated, closing the ticket again does
+        not replace it. Approved entries are used for AI answers at once, keep new entries pending unless the user
+        wants them approved. vector_sync in the result: indexed (searchable), removed (pending, not searchable) or
+        a failure (not_configured, problem_blank, index_failed).
+        """
+        fields = compact(project_id=project, issue_id=issue_id, problem=problem, solution=solution, status=status)
+        return changed(redmine.helpdesk_kb_entry.create(**fields))
+
+    @tool(write=True, destructive=True, idempotent=True)
+    def update_helpdesk_kb_entry(
+        entry_id: KbEntryId,
+        problem: Annotated[str | None, Field(description=KB_PROBLEM)] = None,
+        solution: str | None = None,
+        status: KbStatus = None,
+    ) -> dict:
+        """
+        Corrects the texts of a knowledge base entry (replaced, not appended) or sets it approved/pending, only the
+        given fields change. Rejecting: curate_helpdesk_kb_entry. vector_sync in the result tells whether AI
+        answers use the new text: indexed, removed, or a failure (not_configured, problem_blank, index_failed,
+        unindex_failed).
+        """
+        require_one(problem=problem, solution=solution, status=status)
+        fields = compact(problem=problem, solution=solution, status=status)
+        return changed(redmine.helpdesk_kb_entry.update(entry_id, **fields))
+
+    @tool(write=True, idempotent=True)
+    def curate_helpdesk_kb_entry(
+        entry_id: KbEntryId,
+        decision: Annotated[
+            Literal['approve', 'reject'],
+            Field(
+                description='approve: embed it and use it for AI answers, reject: remove it from AI answers, '
+                'the entry is kept so a new extraction does not bring it back'
+            ),
+        ],
+    ) -> dict:
+        """
+        Approves or rejects a knowledge base entry after review. vector_sync in the result: indexed (approved and
+        searchable), removed (rejected), or a failure (not_configured, problem_blank, index_failed, unindex_failed).
+        """
+        manager = redmine.helpdesk_kb_entry
+        return changed(manager.approve(entry_id) if decision == 'approve' else manager.reject(entry_id))

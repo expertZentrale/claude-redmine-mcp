@@ -1,6 +1,6 @@
 ---
 name: redmine
-description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets and customers, SLA, sprints and story points, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, customers, SLA, sprints, story points or spent time in Redmine.
+description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets and customers, SLA, the helpdesk knowledge base, sprints and story points, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, customers, SLA, knowledge base entries, sprints, story points or spent time in Redmine.
 ---
 
 # Working with Redmine
@@ -68,6 +68,28 @@ Helpdesk tickets are normal issues plus a customer (contact), a mailbox, a mail 
   response. A comment does not mail the customer - replies to customers are made in Redmine itself.
 - The same filters work in `search_issues` too: `helpdesk_kunde`, `helpdesk_awaiting_agent` (`1`/`0`),
   `helpdesk_sla_reaction`, `helpdesk_sla_solution`; sort by them with `sort="helpdesk_sla_reaction"`.
+
+### Knowledge base
+
+Problem/solution pairs the AI extracts from closed tickets. Approved entries are embedded and used for AI answers
+and solution proposals, only the problem text is matched against new tickets.
+
+| Question | Call |
+|---|---|
+| Known solution for a problem | `list_helpdesk_kb_entries(project, search="vpn")` (problem or solution contains), full text: `get_helpdesk_kb_entry(id)` |
+| Entries waiting for review | `list_helpdesk_kb_entries(project, status="pending")`; `skipped` (no solution found) is hidden unless asked for, `status="all"` |
+| Entry of a ticket | `list_helpdesk_kb_entries(project, issue_id=4711, status="all")` |
+| Approve / reject after review | `curate_helpdesk_kb_entry(entry_id, decision="approve")` |
+| Correct the texts | `update_helpdesk_kb_entry(entry_id, problem=..., solution=...)` |
+
+- Entry ids are not ticket ids. One entry per ticket, `create_helpdesk_kb_entry` fails for a ticket that has one.
+- Approving puts an entry into the AI answers at once. Show the user problem and solution and confirm before
+  approving; create new entries as `pending` unless the user wants them approved. Write the problem the way a
+  customer would describe it.
+- Every write returns `vector_sync`: `indexed` and `removed` are fine, anything else means the vector store did not
+  take the change - report it.
+- Rejected entries are kept, so a new extraction does not bring them back. The server cannot delete entries or
+  start a reindex/re-extraction, that is done in Redmine's knowledge base tab.
 
 ## Agile (redmine_expert_agile, toolset `expert_agile`)
 

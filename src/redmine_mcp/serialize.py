@@ -5,6 +5,8 @@ Turns redminelib resources and resource sets into plain JSON data for tool resul
 DEFAULT_LIMIT = 25
 MAX_LIMIT = 100
 LIST_TEXT_LIMIT = 300
+# problem/solution: knowledge base entries of redmine_expert_helpdesk
+LIST_TEXT_FIELDS = ('description', 'text', 'content', 'notes', 'problem', 'solution')
 # Redmine returns the API key of the requesting user (users/current), it must never reach the model
 SECRET_FIELDS = frozenset({'api_key', 'password'})
 
@@ -43,7 +45,7 @@ def resource(res):
     return _clean(dict(res.raw()))
 
 
-def resource_set(resources, limit, offset=0, shorten=('description', 'text', 'content', 'notes')):
+def resource_set(resources, limit, offset=0, shorten=LIST_TEXT_FIELDS):
     """
     One page of a resource set. The set has to be created with limit/offset already, redminelib fetches
     everything when no limit is given.

@@ -10,6 +10,9 @@ WRITE_TOOLS = {
     'create_issue_relation',
     'save_wiki_page',
     'create_helpdesk_ticket',
+    'create_helpdesk_kb_entry',
+    'update_helpdesk_kb_entry',
+    'curate_helpdesk_kb_entry',
     'create_sprint',
     'update_sprint',
     'update_issue_agile_data',
@@ -45,6 +48,8 @@ def test_annotations(rw):
         lambda r: r.issue.update(1, notes='x'),
         lambda r: r.issue.delete(1),
         lambda r: r.expert_agile_data.update(1, story_points=3),
+        # Custom POSTs of the library outside create/update/delete
+        lambda r: r.helpdesk_kb_entry.approve(1),
         lambda r: r.project.close('p'),
     ],
 )
