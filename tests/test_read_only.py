@@ -9,6 +9,12 @@ WRITE_TOOLS = {
     'log_time',
     'create_issue_relation',
     'save_wiki_page',
+    'add_project_member',
+    'update_project_member',
+    'remove_project_member',
+    'create_group',
+    'add_group_users',
+    'remove_group_users',
     'create_helpdesk_ticket',
     'create_helpdesk_kb_entry',
     'update_helpdesk_kb_entry',
@@ -51,6 +57,8 @@ def test_annotations(rw):
         # Custom POSTs of the library outside create/update/delete
         lambda r: r.helpdesk_kb_entry.approve(1),
         lambda r: r.project.close('p'),
+        lambda r: r.project_membership.create(project_id='p', user_id=5, role_ids=[3]),
+        lambda r: r.group.create(name='g'),
     ],
 )
 def test_engine_blocks_writes_before_sending(ro, call):

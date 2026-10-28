@@ -326,3 +326,61 @@ def test_sprint_overview_drops_issues_outside_the_sprint(ro):
 def test_sprint_overview_rejects_bad_sprint(ro):
     with pytest.raises(ToolError, match='active'):
         ro.call('get_sprint_overview', project='scrum', sprint='current')
+
+
+def test_add_project_member(rw):
+    rw.respond({'membership': {'id': 9, 'user': {'id': 5, 'name': 'Ann'}, 'roles': [{'id': 3, 'name': 'Dev'}]}})
+
+    result = rw.call('add_project_member', project='neo', user_id=5, role_ids=[3])
+
+    method, url, kwargs = rw.requests[0]
+    assert (method, url) == ('post', 'https://redmine.test/projects/neo/memberships.json')
+    assert json.loads(kwargs['data']) == {'membership': {'user_id': 5, 'role_ids': [3]}}
+    assert result['item']['id'] == 9
+
+
+def test_update_and_remove_project_member(rw):
+    rw.respond(None, None)
+
+    assert rw.call('update_project_member', membership_id=9, role_ids=[3, 4]) == {'ok': True, 'membership_id': 9}
+    assert rw.call('remove_project_member', membership_id=9) == {'ok': True, 'membership_id': 9}
+
+    (put, put_url, put_kwargs), (delete, delete_url, _) = rw.requests
+    assert (put, put_url) == ('put', 'https://redmine.test/memberships/9.json')
+    assert json.loads(put_kwargs['data']) == {'membership': {'role_ids': [3, 4]}}
+    assert (delete, delete_url) == ('delete', 'https://redmine.test/memberships/9.json')
+
+
+def test_create_group_with_users(rw):
+    rw.respond({'group': {'id': 20, 'name': 'Anforderungsmanagement'}})
+
+    result = rw.call('create_group', name='Anforderungsmanagement', user_ids=[5, 6])
+
+    method, url, kwargs = rw.requests[0]
+    assert (method, url) == ('post', 'https://redmine.test/groups.json')
+    assert json.loads(kwargs['data']) == {'group': {'name': 'Anforderungsmanagement', 'user_ids': [5, 6]}}
+    assert result['item']['id'] == 20
+
+
+def test_group_users_one_request_each(rw):
+    rw.respond({'group': {'id': 20, 'name': 'G'}}, None, None, {'group': {'id': 20, 'name': 'G'}}, None)
+
+    assert rw.call('add_group_users', group_id=20, user_ids=[5, 6])['added_user_ids'] == [5, 6]
+    assert rw.call('remove_group_users', group_id=20, user_ids=[5])['removed_user_ids'] == [5]
+
+    writes = [(m, u) for m, u, _ in rw.requests if m != 'get']
+    assert writes == [
+        ('post', 'https://redmine.test/groups/20/users.json'),
+        ('post', 'https://redmine.test/groups/20/users.json'),
+        ('delete', 'https://redmine.test/groups/20/users/5.json'),
+    ]
+
+
+def test_list_users_by_name(ro):
+    ro.respond({'users': [{'id': 5, 'login': 'bschubert'}], 'total_count': 1, 'limit': 25, 'offset': 0})
+
+    result = ro.call('list_users', name='schubert')
+
+    assert ro.requests[0][1] == 'https://redmine.test/users.json'
+    assert ro.requests[0][2]['params']['name'] == 'schubert'
+    assert result['items'][0]['id'] == 5

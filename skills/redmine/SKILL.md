@@ -46,6 +46,24 @@ Nothing in this server mails customers. Creating helpdesk tickets does not send 
   like the unfiltered one, compare with `limit=1` without the filter.
 - Ids of statuses, trackers, priorities, activities, saved queries: `list_reference_data`.
 
+## Project members and groups
+
+| Question | Call |
+|---|---|
+| Members of a project, membership ids | `list_project_members(project)` |
+| User ids by name | `list_users(name="schubert")` |
+| Users and projects of a group | `get_group(id)`, group ids: `list_reference_data("groups")` |
+| Role ids | `list_reference_data("roles")` |
+
+- Write tools: `add_project_member` (user or group id), `update_project_member` (replaces the roles),
+  `remove_project_member`, `create_group`, `add_group_users`, `remove_group_users`.
+- Members need the "manage members" permission in the project; users, groups and `list_users` need an admin API
+  key. A 403 means the key lacks that, say so instead of retrying.
+- Prefer adding a group to a project over adding its users one by one. Memberships a user has through a group
+  cannot be removed with `remove_project_member`, remove the user from the group or the group from the project.
+- Check first whether the users are already members or the group already exists, then confirm the list of
+  changes (who, which roles) with the user.
+
 ## Helpdesk (redmine_expert_helpdesk, toolset `expert_helpdesk`)
 
 Helpdesk tickets are normal issues plus a customer (contact), a mailbox, a mail log and SLA times.

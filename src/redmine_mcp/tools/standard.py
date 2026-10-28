@@ -17,6 +17,8 @@ Extra = Annotated[
     dict[str, Any] | None,
     Field(description='Additional Redmine API fields, e.g. {"custom_fields": [{"id": 5, "value": "x"}]}'),
 ]
+RoleIds = Annotated[list[int], Field(min_length=1, description='Role ids, see list_reference_data("roles")')]
+UserIds = Annotated[list[int], Field(min_length=1, description='User ids, see list_users')]
 
 ISSUE_INCLUDES = ('journals', 'attachments', 'relations', 'children', 'watchers', 'changesets', 'allowed_statuses')
 REFERENCE_DATA = {
@@ -122,6 +124,21 @@ def register(tool, redmine):
     def list_project_members(project: Project, limit: Limit = 25, offset: Offset = 0) -> dict:
         """Members of a project with their roles."""
         return page(redmine.project_membership, {'project_id': project}, limit, offset)
+
+    @tool()
+    def list_users(
+        name: Annotated[str | None, Field(description='Login, first name, last name or email contains')] = None,
+        group_id: Annotated[int | None, Field(description='Only members of this group')] = None,
+        limit: Limit = 25,
+        offset: Offset = 0,
+    ) -> dict:
+        """Active users with their ids, needed for memberships and groups (admin only)."""
+        return page(redmine.user, compact(name=name, group_id=group_id), limit, offset)
+
+    @tool()
+    def get_group(group_id: int) -> dict:
+        """A group with its users and project memberships (admin only)."""
+        return serialize.resource(redmine.group.get(group_id, include=['users', 'memberships']))
 
     @tool()
     def list_wiki_pages(project: Project, limit: Limit = 100, offset: Offset = 0) -> dict:
@@ -341,3 +358,58 @@ def register(tool, redmine):
         """Creates a wiki page or replaces the text of an existing one (the old text stays in the page history)."""
         fields = compact(project_id=project, text=text, comments=comments, parent_title=parent_title)
         return changed(redmine.wiki_page.update(title, **fields), project=project, title=title)
+
+    # Memberships and groups, need the manage_members permission resp. an admin API key
+
+    @tool(write=True)
+    def add_project_member(
+        project: Project,
+        user_id: Annotated[int, Field(description='User or group id')],
+        role_ids: RoleIds,
+    ) -> dict:
+        """Adds a user or group to a project with the given roles."""
+        return changed(redmine.project_membership.create(project_id=project, user_id=user_id, role_ids=role_ids))
+
+    @tool(write=True, destructive=True, idempotent=True)
+    def update_project_member(
+        membership_id: Annotated[int, Field(description='Membership id from list_project_members')],
+        role_ids: Annotated[RoleIds, Field(description='Replaces the current roles')],
+    ) -> dict:
+        """Sets the roles of a project membership."""
+        return changed(redmine.project_membership.update(membership_id, role_ids=role_ids), membership_id=membership_id)
+
+    @tool(write=True, destructive=True, idempotent=True)
+    def remove_project_member(
+        membership_id: Annotated[int, Field(description='Membership id from list_project_members')],
+    ) -> dict:
+        """Removes a membership from its project (inherited group memberships cannot be removed this way)."""
+        return changed(redmine.project_membership.delete(membership_id), membership_id=membership_id)
+
+    @tool(write=True)
+    def create_group(
+        name: str,
+        user_ids: Annotated[list[int] | None, Field(description='Initial members, see list_users')] = None,
+    ) -> dict:
+        """Creates a user group (admin only)."""
+        return changed(redmine.group.create(**compact(name=name, user_ids=user_ids)))
+
+    @tool(write=True, idempotent=True)
+    def add_group_users(group_id: int, user_ids: UserIds) -> dict:
+        """Adds users to a group, they get the group's project memberships."""
+        group = redmine.group.get(group_id)
+
+        for user_id in user_ids:
+            group.user.add(user_id)
+
+        return {'ok': True, 'group_id': group_id, 'added_user_ids': user_ids}
+
+    @tool(write=True, destructive=True, idempotent=True)
+    def remove_group_users(group_id: int, user_ids: UserIds) -> dict:
+        """Removes users from a group, they lose the memberships they had through it."""
+        group = redmine.group.get(group_id)
+
+        # One request per user, removing several at once needs Redmine >= 7.0
+        for user_id in user_ids:
+            group.user.remove(user_id)
+
+        return {'ok': True, 'group_id': group_id, 'removed_user_ids': user_ids}

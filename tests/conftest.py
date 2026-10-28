@@ -50,7 +50,7 @@ class Server:
 
         self.session.request.side_effect = answer
 
-    def call(self, name, **arguments):
+    def call(self, name, /, **arguments):
         result = asyncio.run(self.mcp.call_tool(name, arguments))
         return json.loads(result.content[0].text)
 
