@@ -367,15 +367,22 @@ def register(tool, redmine):
         user_id: Annotated[int, Field(description='User or group id')],
         role_ids: RoleIds,
     ) -> dict:
-        """Adds a user or group to a project with the given roles."""
+        """
+        Adds a user or group to a project with the given roles. A user who is already a member through a group
+        has a membership already, give that one more roles with update_project_member.
+        """
         return changed(redmine.project_membership.create(project_id=project, user_id=user_id, role_ids=role_ids))
 
     @tool(write=True, destructive=True, idempotent=True)
     def update_project_member(
         membership_id: Annotated[int, Field(description='Membership id from list_project_members')],
-        role_ids: Annotated[RoleIds, Field(description='Replaces the current roles')],
+        role_ids: Annotated[RoleIds, Field(description='Replaces the own (not inherited) roles')],
     ) -> dict:
-        """Sets the roles of a project membership."""
+        """
+        Sets the own roles of a project membership. Roles inherited from a group are always kept, and a role the
+        member already inherits is not added as an own role (Redmine still answers ok), check with
+        list_project_members.
+        """
         return changed(redmine.project_membership.update(membership_id, role_ids=role_ids), membership_id=membership_id)
 
     @tool(write=True, destructive=True, idempotent=True)

@@ -61,6 +61,10 @@ Nothing in this server mails customers. Creating helpdesk tickets does not send 
   key. A 403 means the key lacks that, say so instead of retrying.
 - Prefer adding a group to a project over adding its users one by one. Memberships a user has through a group
   cannot be removed with `remove_project_member`, remove the user from the group or the group from the project.
+- Roles marked `inherited` come from a group. `update_project_member` keeps them and only adds roles the member
+  does not inherit yet, the same role cannot be own and inherited unless the own one existed first. Adding a
+  group gives its users a membership at once, `add_project_member` for them then fails with "already taken".
+  So when users should have own roles as well as the group's, add the users before the group.
 - Check first whether the users are already members or the group already exists, then confirm the list of
   changes (who, which roles) with the user.
 
