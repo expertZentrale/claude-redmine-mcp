@@ -79,7 +79,7 @@ Helpdesk tickets are normal issues plus a customer (contact), a mailbox, a mail 
 | SLA breached / at risk | `search_helpdesk_tickets(sla_reaction="breached")`, values `met running warning breached breached_done`, same for `sla_solution` |
 | Contact data | `list_helpdesk_contacts(project, search=...)` or `email=` (exact) |
 | SLA state and mail log of one ticket | `get_helpdesk_ticket(id)` |
-| Which ticket a mail went into, which mails never arrived | `search_helpdesk_messages(message_ids=[...])` (Message-IDs, up to 500, `not_found` = never imported) |
+| Which ticket a mail went into, which mails are missing | `search_helpdesk_messages(message_ids=[...])` (Message-IDs, up to 500, `not_found` = not imported or not visible to the bot user) |
 | Mail texts | `get_issue(id)`: description (first mail) and journals (replies, further mails) |
 | SLA times, autoresponder, settings | `get_helpdesk_project_settings(project)` |
 

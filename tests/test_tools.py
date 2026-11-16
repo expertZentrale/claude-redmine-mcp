@@ -186,6 +186,23 @@ def test_search_helpdesk_messages_in_chunks_of_50(ro):
     assert result['not_found'] == [i for i in ids if i != 'm60@example.com']
 
 
+def test_search_helpdesk_messages_dedupes_case_insensitively(ro):
+    # 49 others plus two spellings of one ID make 50 IDs, one request
+    ids = ['A@example.com'] + [f'm{i}@example.com' for i in range(49)] + ['a@example.com']
+    ro.respond(_messages({'id': 1, 'message_id': '<a@example.com>', 'direction': 'in'}))
+
+    result = ro.call('search_helpdesk_messages', message_ids=ids)
+
+    assert len(ro.requests) == 1
+    sent = ro.requests[0][2]['params']['message_id'].split(',')
+    assert len(sent) == 50
+    assert [i for i in sent if i.lower() == 'a@example.com'] == ['A@example.com']
+    # A bracketed ID in the answer still counts as found
+    assert result['count'] == 1
+    assert len(result['not_found']) == 49
+    assert 'A@example.com' not in result['not_found']
+
+
 def test_search_helpdesk_messages_refuses_empty_and_lists(ro):
     with pytest.raises(ToolError, match='no Message-ID'):
         ro.call('search_helpdesk_messages', message_ids=['<>', ' '])

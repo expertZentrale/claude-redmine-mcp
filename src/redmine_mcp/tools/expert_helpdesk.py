@@ -34,6 +34,10 @@ KbStatus = Annotated[
 ]
 
 
+def _bare_message_id(value):
+    return str(value or '').strip().removeprefix('<').removesuffix('>').strip()
+
+
 def register(tool, redmine):
     @tool()
     def search_helpdesk_tickets(
@@ -107,32 +111,33 @@ def register(tool, redmine):
         visible ticket has: the mail was never imported (skipped or failed at the fetch, sent to a mailbox
         Redmine does not fetch, never arrived) or its ticket is hidden from this user. Up to 500 IDs per call.
         """
-        ids = []
+        ids = {}  # lower-cased key -> Message-ID as given, the database may match regardless of case
 
         for raw in message_ids:
-            message_id = raw.strip().removeprefix('<').removesuffix('>').strip()
+            message_id = _bare_message_id(raw)
 
             if ',' in message_id:
                 raise ToolError(f'{raw!r} is not a single Message-ID')
 
-            if message_id and message_id not in ids:
-                ids.append(message_id)
+            if message_id:
+                ids.setdefault(message_id.lower(), message_id)
 
         if not ids:
             raise ToolError('message_ids holds no Message-ID')
 
         found = []
+        requested = list(ids.values())
 
-        for start in range(0, len(ids), MESSAGE_IDS_PER_REQUEST):
-            chunk = ids[start : start + MESSAGE_IDS_PER_REQUEST]
+        for start in range(0, len(requested), MESSAGE_IDS_PER_REQUEST):
+            chunk = requested[start : start + MESSAGE_IDS_PER_REQUEST]
 
             for message in redmine.helpdesk_message.filter(**compact(message_id=chunk, project_id=project)):
                 entry = serialize.resource(message)
                 found.append({key: entry[key] for key in MESSAGE_FIELDS if key in entry})
 
-        # The database may match regardless of case, the answer carries the stored spelling
-        seen = {str(entry.get('message_id', '')).lower() for entry in found}
-        return {'found': found, 'not_found': [i for i in ids if i.lower() not in seen], 'count': len(found)}
+        # The answer carries the stored spelling
+        seen = {_bare_message_id(entry.get('message_id')).lower() for entry in found}
+        return {'found': found, 'not_found': [i for key, i in ids.items() if key not in seen], 'count': len(found)}
 
     @tool()
     def list_helpdesk_contacts(
