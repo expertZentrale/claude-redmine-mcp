@@ -15,7 +15,8 @@ _MESSAGES = {
     exceptions.AuthError: 'Redmine rejected the API key (401), check REDMINE_API_KEY',
     exceptions.ForbiddenError: 'The Redmine user of this server lacks the permission for this (403)',
     exceptions.ResourceNotFoundError: 'Not found (404), or not visible to the Redmine user of this server',
-    exceptions.ResourceRequirementsError: 'The Redmine plugin providing this resource is not installed or enabled',
+    exceptions.ResourceRequirementsError: 'The Redmine plugin providing this resource is not installed, not enabled '
+    'or too old',
 }
 
 
@@ -33,6 +34,10 @@ def _translate(fn):
         except exceptions.BaseRedmineError as e:
             for cls, message in _MESSAGES.items():
                 if isinstance(e, cls):
+                    if isinstance(e, exceptions.ResourceRequirementsError):
+                        # redminelib names the plugin and version, e.g. "redmine_expert_helpdesk >= 0.26.0"
+                        message = f'{message} (needs {str(e).rsplit(": ", 1)[-1]})'
+
                     raise ToolError(message) from e
 
             raise ToolError(f'{e.__class__.__name__}: {e}') from e

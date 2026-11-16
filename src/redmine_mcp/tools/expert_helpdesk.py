@@ -5,6 +5,9 @@ The ticket list of the helpdesk API only pages (limit/offset) and silently ignor
 ticket lists go through /issues.json and the issue query filters the plugin adds (helpdesk_kunde,
 helpdesk_awaiting_agent, helpdesk_sla_reaction, helpdesk_sla_solution).
 
+The mail log can be searched by Message-ID only (plugin >= 0.26.0), the plugin takes 50 IDs per request, so
+longer lists go out in chunks. A Message-ID missing from the answer never reached a visible ticket.
+
 Knowledge base entries are problem/solution pairs extracted from closed tickets, approved ones are embedded
 into a vector store for the AI answers. Deleting entries and the reindex/reextract jobs are left out: the
 server deletes nothing, and a re-extraction costs one AI call per entry and overwrites uncurated entries.
@@ -12,6 +15,7 @@ server deletes nothing, and a re-extraction costs one AI call per entry and over
 
 from typing import Annotated, Literal
 
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from .. import serialize
@@ -19,6 +23,9 @@ from . import changed, compact, merge_extra, page, require_one
 from .standard import Extra, Limit, Offset, Project
 
 SlaState = Literal['met', 'running', 'warning', 'breached', 'breached_done']
+MAX_MESSAGE_IDS = 500
+MESSAGE_IDS_PER_REQUEST = 50  # the plugin's limit
+MESSAGE_FIELDS = ('message_id', 'direction', 'issue', 'project', 'subject', 'sent_at', 'recipient_to', 'mailbox')
 KbEntryId = Annotated[int, Field(description='Id of the knowledge base entry, not of the ticket')]
 KB_PROBLEM = 'Problem as a customer would describe it, only this text is embedded and matched against new tickets'
 KbStatus = Annotated[
@@ -80,6 +87,52 @@ def register(tool, redmine):
         """
         params = {'include': ['messages']} if include_messages else {}
         return serialize.resource(redmine.helpdesk_ticket.get(ticket_id, **params))
+
+    @tool()
+    def search_helpdesk_messages(
+        message_ids: Annotated[
+            list[str],
+            Field(
+                description='Message-IDs of the mails, with or without angle brackets',
+                min_length=1,
+                max_length=MAX_MESSAGE_IDS,
+            ),
+        ],
+        project: Project | None = None,
+    ) -> dict:
+        """
+        Finds mails in the helpdesk mail log by Message-ID, across all projects unless project is given: which
+        ticket a customer mail went into (direction in) or which reply went out with that ID (out). found lists
+        the log entries with ticket and project, one mail may be in several projects. not_found lists the IDs no
+        visible ticket has: the mail was never imported (skipped or failed at the fetch, sent to a mailbox
+        Redmine does not fetch, never arrived) or its ticket is hidden from this user. Up to 500 IDs per call.
+        """
+        ids = []
+
+        for raw in message_ids:
+            message_id = raw.strip().removeprefix('<').removesuffix('>').strip()
+
+            if ',' in message_id:
+                raise ToolError(f'{raw!r} is not a single Message-ID')
+
+            if message_id and message_id not in ids:
+                ids.append(message_id)
+
+        if not ids:
+            raise ToolError('message_ids holds no Message-ID')
+
+        found = []
+
+        for start in range(0, len(ids), MESSAGE_IDS_PER_REQUEST):
+            chunk = ids[start : start + MESSAGE_IDS_PER_REQUEST]
+
+            for message in redmine.helpdesk_message.filter(**compact(message_id=chunk, project_id=project)):
+                entry = serialize.resource(message)
+                found.append({key: entry[key] for key in MESSAGE_FIELDS if key in entry})
+
+        # The database may match regardless of case, the answer carries the stored spelling
+        seen = {str(entry.get('message_id', '')).lower() for entry in found}
+        return {'found': found, 'not_found': [i for i in ids if i.lower() not in seen], 'count': len(found)}
 
     @tool()
     def list_helpdesk_contacts(

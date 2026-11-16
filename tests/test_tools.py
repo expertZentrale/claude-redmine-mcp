@@ -126,6 +126,85 @@ def test_helpdesk_ticket_with_messages(ro):
     assert result['messages'] == [{'id': 1}]
 
 
+def _messages(*rows):
+    return {'helpdesk_messages': list(rows), 'total_count': len(rows), 'limit': 100, 'offset': 0}
+
+
+def test_search_helpdesk_messages(ro):
+    ro.respond(
+        _messages(
+            {
+                'id': 9,
+                'issue': {'id': 42, 'subject': 'Printer'},
+                'project': {'id': 1, 'name': 'Support'},
+                'direction': 'in',
+                'message_id': 'ABC@mail.example.com',
+                'subject': 'Printer',
+                'sent_at': '2026-10-14T14:35:00Z',
+                'recipient_to': 'support@example.com',
+                'recipient_cc': 'x@example.com',
+                'contact': {'id': 1},
+                'mailbox': {'id': 7},
+                'created_on': '2026-10-14T14:35:05Z',
+            }
+        )
+    )
+
+    result = ro.call(
+        'search_helpdesk_messages', message_ids=['<abc@mail.example.com>', ' lost@example.com ', 'abc@mail.example.com']
+    )
+
+    method, url, kwargs = ro.requests[0]
+    assert url == 'https://redmine.test/helpdesk/messages.json'
+    assert kwargs['params']['message_id'] == 'abc@mail.example.com,lost@example.com'
+    assert 'project_id' not in kwargs['params']
+    assert result['count'] == 1
+    assert result['found'] == [
+        {
+            'message_id': 'ABC@mail.example.com',
+            'direction': 'in',
+            'issue': {'id': 42, 'subject': 'Printer'},
+            'project': {'id': 1, 'name': 'Support'},
+            'subject': 'Printer',
+            'sent_at': '2026-10-14T14:35:00Z',
+            'recipient_to': 'support@example.com',
+            'mailbox': {'id': 7},
+        }
+    ]
+    assert result['not_found'] == ['lost@example.com']
+
+
+def test_search_helpdesk_messages_in_chunks_of_50(ro):
+    ids = [f'm{i}@example.com' for i in range(120)]
+    ro.respond(_messages(), _messages({'id': 1, 'message_id': 'm60@example.com', 'direction': 'in'}), _messages())
+
+    result = ro.call('search_helpdesk_messages', message_ids=ids, project='support')
+
+    sent = [kwargs['params'] for _, _, kwargs in ro.requests]
+    assert [len(p['message_id'].split(',')) for p in sent] == [50, 50, 20]
+    assert {p['project_id'] for p in sent} == {'support'}
+    assert result['not_found'] == [i for i in ids if i != 'm60@example.com']
+
+
+def test_search_helpdesk_messages_refuses_empty_and_lists(ro):
+    with pytest.raises(ToolError, match='no Message-ID'):
+        ro.call('search_helpdesk_messages', message_ids=['<>', ' '])
+
+    with pytest.raises(ToolError, match='not a single Message-ID'):
+        ro.call('search_helpdesk_messages', message_ids=['a@x,b@y'])
+
+    ro.session.request.assert_not_called()
+
+
+def test_search_helpdesk_messages_needs_the_plugin_version(ro):
+    ro.respond(None, status_code=404)
+
+    with pytest.raises(
+        ToolError, match=r'not installed, not enabled or too old \(needs redmine_expert_helpdesk >= 0\.26\.0\)'
+    ):
+        ro.call('search_helpdesk_messages', message_ids=['a@example.com'])
+
+
 def test_connection_errors_become_tool_errors(ro):
     import requests
 
