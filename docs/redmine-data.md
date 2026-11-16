@@ -50,6 +50,7 @@ Dazu kommt die Wissensbasis mit Problem/Lösung-Paaren aus geschlossenen Tickets
 |---|---|---|---|
 | Tickets eines Projekts (nur blättern, keine Filter) | `list_helpdesk_tickets` | `GET /projects/:id/helpdesk/tickets.json` | Tickets anzeigen, Modul Helpdesk aktiv |
 | Ticket mit Kontakt, Postfach, SLA, Mail-Protokoll | `get_helpdesk_ticket` | `GET /helpdesk/tickets/:id.json?include=messages` | Tickets anzeigen |
+| Mails per Message-ID: in welches Ticket, welche fehlen (ab Plugin 0.26.0) | `search_helpdesk_messages` | `GET /helpdesk/messages.json?message_id=a,b,…` (max. 50 je Anfrage, das Tool teilt auf) | Tickets anzeigen, Modul Helpdesk aktiv |
 | Kontakte suchen (Name, Mail, Firma) oder exakt per Mail | `list_helpdesk_contacts` | `GET /projects/:id/helpdesk/contacts.json?search=…\|email=…` | `view_helpdesk_info` oder `manage_helpdesk_contacts` |
 | Kontakt | `get_helpdesk_contact` | `GET /helpdesk/contacts/:id.json` | wie oben |
 | SLA-Zeiten pro Priorität, Autoresponder, Info-Anfragen, KI-Optionen | `get_helpdesk_project_settings` | `GET /projects/:id/helpdesk/settings.json` | `view_helpdesk_info` oder `manage_helpdesk` |
@@ -60,7 +61,10 @@ Die Ticketliste der Helpdesk-API kennt **nur** `limit`/`offset`. `contact_id`, `
 `search` usw. werden ignoriert – deshalb hat `list_helpdesk_tickets` keine Filter.
 
 **Mail-Protokoll** (`messages`): Richtung `in` (Kundenmail), `out` (Antwort versendet), `init` (Kontakt
-zugeordnet), Betreff, Zeitpunkt, Empfänger (To/Cc/Bcc). **Kein Mailtext:** Die erste Mail ist die
+zugeordnet), Message-ID (ohne spitze Klammern, ab Plugin 0.26.0), Betreff, Zeitpunkt, Empfänger (To/Cc/Bcc).
+Die Message-ID-Suche geht über alle Projekte, die der Bot-User sehen darf; eine ID, die dort fehlt, wurde nie
+importiert (beim Abruf übersprungen oder fehlgeschlagen, an ein Postfach, das Redmine nicht abruft) oder ihr
+Ticket ist für den Bot-User unsichtbar. **Kein Mailtext:** Die erste Mail ist die
 Issue-Beschreibung, weitere Mails und Antworten stehen in den Kommentaren (`get_issue`).
 
 **SLA** pro Ticket: `reaction` und `solution` mit `status` (`met`, `running`, `warning`, `breached`,

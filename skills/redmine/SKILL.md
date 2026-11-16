@@ -1,6 +1,6 @@
 ---
 name: redmine
-description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets and customers, SLA, the helpdesk knowledge base, sprints and story points, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, customers, SLA, knowledge base entries, sprints, story points or spent time in Redmine.
+description: How to work with Redmine through the redmine MCP tools - finding issues, reading their history, helpdesk tickets and customers, SLA, finding mails by Message-ID, the helpdesk knowledge base, sprints and story points, logging time and changing issues. Use whenever the user mentions Redmine, a ticket or issue number (#1234), helpdesk tickets, customers, SLA, a Message-ID, knowledge base entries, sprints, story points or spent time in Redmine.
 ---
 
 # Working with Redmine
@@ -79,13 +79,17 @@ Helpdesk tickets are normal issues plus a customer (contact), a mailbox, a mail 
 | SLA breached / at risk | `search_helpdesk_tickets(sla_reaction="breached")`, values `met running warning breached breached_done`, same for `sla_solution` |
 | Contact data | `list_helpdesk_contacts(project, search=...)` or `email=` (exact) |
 | SLA state and mail log of one ticket | `get_helpdesk_ticket(id)` |
+| Which ticket a mail went into, which mails are missing | `search_helpdesk_messages(message_ids=[...])` (Message-IDs, up to 500, `not_found` = not imported or not visible to the bot user) |
 | Mail texts | `get_issue(id)`: description (first mail) and journals (replies, further mails) |
 | SLA times, autoresponder, settings | `get_helpdesk_project_settings(project)` |
 
 - `list_helpdesk_tickets` only pages through all tickets of a project (closed ones included); the helpdesk API
   ignores every filter there. Filter with `search_helpdesk_tickets`.
 - The mail log in `get_helpdesk_ticket` has no mail body: `direction` `in` = customer mail, `out` = reply sent,
-  `init` = contact assigned.
+  `init` = contact assigned. Each entry carries the mail's `message_id` (without angle brackets).
+- `search_helpdesk_messages` searches every project the bot user can see. An ID in `not_found` was not
+  imported (skipped or failed at the fetch, sent to a mailbox Redmine does not fetch) or its ticket is hidden
+  from the bot user - say so, it is not proof the mail never arrived at the mail server.
 - Comments and status changes on helpdesk tickets go through `update_issue`, which also records the SLA first
   response. A comment does not mail the customer - replies to customers are made in Redmine itself.
 - The same filters work in `search_issues` too: `helpdesk_kunde`, `helpdesk_awaiting_agent` (`1`/`0`),
@@ -134,7 +138,8 @@ and solution proposals, only the problem text is matched against new tickets.
 
 CRM contacts and deals (`list_contacts`, `get_contact`, `list_deals`, `get_deal`), RedmineUP helpdesk tickets
 (`list_redmineup_tickets`, `get_redmineup_ticket`), Agile sprints (`list_redmineup_sprints`) and checklists
-(`get_checklist`). A "plugin is not installed" error means the Redmine instance lacks that plugin.
+(`get_checklist`). A "plugin is not installed, not enabled or too old" error means the Redmine instance lacks
+that plugin or the version named in the error.
 
 ## Anything else
 
